@@ -1,2 +1,6 @@
-.env
 node_modules/
+.env
+server/uploads/
+client/dist/
+.DS_Store
+Thumbs.db

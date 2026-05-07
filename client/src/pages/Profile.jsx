@@ -1,22 +1,545 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
+import { useSearchParams } from "react-router-dom";
 import api from "../api/axios";
 import { useAuth } from "../context/AuthContext";
 import ListingCard from "../components/ListingCard";
 import toast from "react-hot-toast";
-import { FiUser, FiMail, FiPhone, FiEdit } from "react-icons/fi";
+import {
+  FiUser,
+  FiMail,
+  FiPhone,
+  FiEdit,
+  FiSend,
+  FiMessageSquare,
+  FiArrowLeft,
+} from "react-icons/fi";
 
 const STATUS_COLORS = {
-  pending: "bg-yellow-100 text-yellow-700",
-  approved: "bg-green-100 text-green-700",
-  rejected: "bg-red-100 text-red-700",
+  pending: "badge-pending",
+  approved: "badge-approved",
+  rejected: "badge-rejected",
 };
 
+const BASE = "http://localhost:5000";
+
+// ── Tiny Avatar helper ─────────────────────────────────────────────────────
+function Avatar({ user: u, size = 40 }) {
+  return (
+    <div
+      style={{
+        width: size,
+        height: size,
+        borderRadius: "9999px",
+        flexShrink: 0,
+        background: "#d1fae5",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        fontWeight: "700",
+        color: "#065f46",
+        fontSize: size * 0.38,
+        overflow: "hidden",
+      }}
+    >
+      {u?.avatar ? (
+        <img
+          src={`${BASE}${u.avatar}`}
+          alt=""
+          style={{ width: "100%", height: "100%", objectFit: "cover" }}
+        />
+      ) : (
+        u?.name?.[0]?.toUpperCase()
+      )}
+    </div>
+  );
+}
+
+// ── Conversation List ──────────────────────────────────────────────────────
+function ConvoList({ convos, activeId, onSelect, currentUserId }) {
+  if (convos.length === 0) {
+    return (
+      <div
+        style={{
+          padding: "2rem",
+          textAlign: "center",
+          color: "#9ca3af",
+          fontSize: "0.875rem",
+        }}
+      >
+        <FiMessageSquare
+          style={{
+            fontSize: "2rem",
+            marginBottom: "0.5rem",
+            display: "block",
+            margin: "0 auto 0.5rem",
+          }}
+        />
+        No conversations yet.
+        <br />
+        Click <b>Message &amp; Bargain</b> on any listing to start one.
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ overflowY: "auto", flex: 1 }}>
+      {convos.map((c) => {
+        const other = c.participants.find((p) => p._id !== currentUserId);
+        const lastMsg = c.messages[c.messages.length - 1];
+        const unread = c.messages.filter(
+          (m) => m.sender._id !== currentUserId && !m.read,
+        ).length;
+        const thumb = c.listing?.images?.[0]
+          ? `${BASE}${c.listing.images[0]}`
+          : null;
+
+        return (
+          <div
+            key={c._id}
+            onClick={() => onSelect(c._id)}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "0.75rem",
+              padding: "0.9rem 1rem",
+              cursor: "pointer",
+              transition: "background 0.15s",
+              background: activeId === c._id ? "#f0fdf4" : "transparent",
+              borderBottom: "1px solid #f3f4f6",
+              borderLeft:
+                activeId === c._id
+                  ? "3px solid #059669"
+                  : "3px solid transparent",
+            }}
+            onMouseEnter={(e) => {
+              if (activeId !== c._id)
+                e.currentTarget.style.background = "#f9fafb";
+            }}
+            onMouseLeave={(e) => {
+              if (activeId !== c._id)
+                e.currentTarget.style.background = "transparent";
+            }}
+          >
+            {/* Listing thumbnail */}
+            {thumb ? (
+              <img
+                src={thumb}
+                alt=""
+                style={{
+                  width: "3rem",
+                  height: "3rem",
+                  borderRadius: "0.5rem",
+                  objectFit: "cover",
+                  flexShrink: 0,
+                }}
+              />
+            ) : (
+              <div
+                style={{
+                  width: "3rem",
+                  height: "3rem",
+                  borderRadius: "0.5rem",
+                  background: "#e5e7eb",
+                  flexShrink: 0,
+                }}
+              />
+            )}
+
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <p
+                style={{
+                  fontWeight: "600",
+                  fontSize: "0.875rem",
+                  color: "#1f2937",
+                  whiteSpace: "nowrap",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                }}
+              >
+                {c.listing?.title || "Listing"}
+              </p>
+              <p
+                style={{
+                  fontSize: "0.75rem",
+                  color: "#6b7280",
+                  whiteSpace: "nowrap",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                }}
+              >
+                {other?.name} ·{" "}
+                {lastMsg
+                  ? lastMsg.text.slice(0, 30) +
+                    (lastMsg.text.length > 30 ? "…" : "")
+                  : "No messages yet"}
+              </p>
+            </div>
+
+            {unread > 0 && (
+              <span
+                style={{
+                  background: "#059669",
+                  color: "#fff",
+                  borderRadius: "9999px",
+                  fontSize: "0.7rem",
+                  fontWeight: "700",
+                  padding: "0.15rem 0.5rem",
+                  flexShrink: 0,
+                }}
+              >
+                {unread}
+              </span>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ── Chat Window ────────────────────────────────────────────────────────────
+function ChatWindow({ convoId, currentUserId, onBack }) {
+  const [convo, setConvo] = useState(null);
+  const [text, setText] = useState("");
+  const [sending, setSending] = useState(false);
+  const bottomRef = useRef(null);
+
+  useEffect(() => {
+    if (!convoId) return;
+    setConvo(null);
+    api.get(`/conversations/${convoId}`).then((r) => setConvo(r.data));
+  }, [convoId]);
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [convo?.messages]);
+
+  const handleSend = async (e) => {
+    e.preventDefault();
+    if (!text.trim()) return;
+    setSending(true);
+    try {
+      const { data } = await api.post(`/conversations/${convoId}/messages`, {
+        text,
+      });
+      setConvo(data);
+      setText("");
+    } catch {
+      toast.error("Failed to send message");
+    }
+    setSending(false);
+  };
+
+  if (!convoId) {
+    return (
+      <div
+        style={{
+          flex: 1,
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          justifyContent: "center",
+          color: "#9ca3af",
+          gap: "0.5rem",
+        }}
+      >
+        <FiMessageSquare style={{ fontSize: "3rem" }} />
+        <p style={{ fontSize: "0.9rem" }}>
+          Select a conversation to start chatting
+        </p>
+      </div>
+    );
+  }
+
+  if (!convo) {
+    return (
+      <div
+        style={{
+          flex: 1,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+        }}
+      >
+        <div className="spinner" />
+      </div>
+    );
+  }
+
+  const other = convo.participants.find((p) => p._id !== currentUserId);
+  const thumb = convo.listing?.images?.[0]
+    ? `${BASE}${convo.listing.images[0]}`
+    : null;
+
+  return (
+    <div
+      style={{
+        flex: 1,
+        display: "flex",
+        flexDirection: "column",
+        minHeight: 0,
+      }}
+    >
+      {/* Chat header */}
+      <div
+        style={{
+          padding: "0.9rem 1rem",
+          borderBottom: "1px solid #f1f5f9",
+          display: "flex",
+          alignItems: "center",
+          gap: "0.75rem",
+          background: "#fff",
+        }}
+      >
+        {/* Back button (mobile) */}
+        <button
+          onClick={onBack}
+          style={{
+            display: "none",
+            border: "none",
+            background: "transparent",
+            cursor: "pointer",
+            color: "#059669",
+            fontSize: "1.2rem",
+            padding: "0.2rem",
+            marginRight: "0.25rem",
+          }}
+          className="chat-back-btn"
+        >
+          <FiArrowLeft />
+        </button>
+
+        {thumb ? (
+          <img
+            src={thumb}
+            alt=""
+            style={{
+              width: "3rem",
+              height: "3rem",
+              borderRadius: "0.5rem",
+              objectFit: "cover",
+            }}
+          />
+        ) : (
+          <div
+            style={{
+              width: "3rem",
+              height: "3rem",
+              borderRadius: "0.5rem",
+              background: "#e5e7eb",
+            }}
+          />
+        )}
+
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <p
+            style={{
+              fontWeight: "700",
+              fontSize: "0.95rem",
+              color: "#1f2937",
+              whiteSpace: "nowrap",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+            }}
+          >
+            {convo.listing?.title}
+          </p>
+          <p style={{ fontSize: "0.78rem", color: "#6b7280" }}>
+            Chat with <b>{other?.name}</b> · ৳
+            {convo.listing?.rent?.toLocaleString()}/mo
+          </p>
+        </div>
+
+        {/* Rent badge */}
+        {convo.listing?.status === "rented" && (
+          <span className="badge badge-rented" style={{ flexShrink: 0 }}>
+            Rented
+          </span>
+        )}
+        {convo.listing?.negotiable && (
+          <span
+            style={{
+              background: "#ecfdf5",
+              color: "#059669",
+              fontSize: "0.7rem",
+              fontWeight: "700",
+              padding: "0.2rem 0.6rem",
+              borderRadius: "9999px",
+              flexShrink: 0,
+            }}
+          >
+            Negotiable
+          </span>
+        )}
+      </div>
+
+      {/* Messages */}
+      <div
+        style={{
+          flex: 1,
+          overflowY: "auto",
+          padding: "1rem",
+          display: "flex",
+          flexDirection: "column",
+          gap: "0.6rem",
+          background: "#f9fafb",
+        }}
+      >
+        {convo.messages.length === 0 && (
+          <div
+            style={{
+              textAlign: "center",
+              color: "#9ca3af",
+              fontSize: "0.875rem",
+              marginTop: "2rem",
+            }}
+          >
+            No messages yet. Say hello! 👋
+          </div>
+        )}
+
+        {convo.messages.map((m) => {
+          const isMine = m.sender._id === currentUserId;
+          return (
+            <div
+              key={m._id}
+              style={{
+                display: "flex",
+                flexDirection: isMine ? "row-reverse" : "row",
+                alignItems: "flex-end",
+                gap: "0.5rem",
+              }}
+            >
+              {!isMine && <Avatar user={m.sender} size={30} />}
+
+              <div style={{ maxWidth: "70%" }}>
+                <div
+                  style={{
+                    background: isMine ? "#059669" : "#ffffff",
+                    color: isMine ? "#ffffff" : "#1f2937",
+                    borderRadius: isMine
+                      ? "1rem 1rem 0.25rem 1rem"
+                      : "1rem 1rem 1rem 0.25rem",
+                    padding: "0.6rem 0.9rem",
+                    fontSize: "0.9rem",
+                    lineHeight: "1.5",
+                    boxShadow: "0 1px 3px rgba(0,0,0,0.06)",
+                    wordBreak: "break-word",
+                  }}
+                >
+                  {m.text}
+                </div>
+                <p
+                  style={{
+                    fontSize: "0.65rem",
+                    color: "#9ca3af",
+                    marginTop: "0.2rem",
+                    textAlign: isMine ? "right" : "left",
+                  }}
+                >
+                  {new Date(m.createdAt).toLocaleTimeString([], {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  })}
+                  {isMine && (
+                    <span
+                      style={{
+                        marginLeft: "0.3rem",
+                        color: m.read ? "#059669" : "#9ca3af",
+                      }}
+                    >
+                      {m.read ? " ✓✓" : " ✓"}
+                    </span>
+                  )}
+                </p>
+              </div>
+            </div>
+          );
+        })}
+        <div ref={bottomRef} />
+      </div>
+
+      {/* Input */}
+      <form
+        onSubmit={handleSend}
+        style={{
+          padding: "0.75rem 1rem",
+          borderTop: "1px solid #f1f5f9",
+          display: "flex",
+          gap: "0.5rem",
+          background: "#fff",
+          alignItems: "flex-end",
+        }}
+      >
+        <textarea
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !e.shiftKey) {
+              e.preventDefault();
+              handleSend(e);
+            }
+          }}
+          placeholder="Type a message… (Enter to send)"
+          rows={1}
+          style={{
+            flex: 1,
+            border: "1.5px solid #e5e7eb",
+            borderRadius: "0.75rem",
+            padding: "0.65rem 0.9rem",
+            fontSize: "0.9rem",
+            outline: "none",
+            fontFamily: "Inter, sans-serif",
+            resize: "none",
+            lineHeight: "1.4",
+            maxHeight: "7rem",
+            overflowY: "auto",
+            transition: "border-color 0.2s",
+          }}
+          onFocus={(e) => (e.target.style.borderColor = "#059669")}
+          onBlur={(e) => (e.target.style.borderColor = "#e5e7eb")}
+        />
+        <button
+          type="submit"
+          disabled={sending || !text.trim()}
+          style={{
+            background: "#059669",
+            color: "#fff",
+            border: "none",
+            borderRadius: "0.75rem",
+            width: "2.7rem",
+            height: "2.7rem",
+            cursor: "pointer",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            fontSize: "1.1rem",
+            flexShrink: 0,
+            transition: "background 0.2s",
+            opacity: !text.trim() || sending ? 0.5 : 1,
+          }}
+        >
+          <FiSend />
+        </button>
+      </form>
+    </div>
+  );
+}
+
+// ── Main Profile Page ──────────────────────────────────────────────────────
 export default function Profile() {
   const { user, updateUser } = useAuth();
+  const [searchParams] = useSearchParams();
+
+  const initialTab = searchParams.get("tab") || "listings";
+  const initialConvo = searchParams.get("convo") || null;
+
   const [myListings, setMyListings] = useState([]);
   const [sentRequests, setSentRequests] = useState([]);
   const [receivedRequests, setReceivedRequests] = useState([]);
-  const [activeTab, setActiveTab] = useState("listings");
+  const [conversations, setConversations] = useState([]);
+  const [activeTab, setActiveTab] = useState(initialTab);
+  const [activeConvoId, setActiveConvoId] = useState(initialConvo);
   const [editMode, setEditMode] = useState(false);
   const [form, setForm] = useState({
     name: user?.name || "",
@@ -24,20 +547,25 @@ export default function Profile() {
   });
   const [avatarFile, setAvatarFile] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [unread, setUnread] = useState(0);
 
   useEffect(() => {
     fetchAll();
   }, []);
 
   const fetchAll = async () => {
-    const [l, s, r] = await Promise.all([
+    const [l, s, r, c, u] = await Promise.all([
       api.get("/listings/my"),
       api.get("/requests/my"),
       api.get("/requests/received"),
+      api.get("/conversations"),
+      api.get("/conversations/unread-count"),
     ]);
     setMyListings(l.data);
     setSentRequests(s.data);
     setReceivedRequests(r.data);
+    setConversations(c.data);
+    setUnread(u.data.count);
   };
 
   const handleRequestAction = async (id, status) => {
@@ -73,158 +601,275 @@ export default function Profile() {
   const tabs = [
     { key: "listings", label: `My Listings (${myListings.length})` },
     { key: "sent", label: `Sent Requests (${sentRequests.length})` },
-    {
-      key: "received",
-      label: `Received Requests (${receivedRequests.length})`,
-    },
+    { key: "received", label: `Received (${receivedRequests.length})` },
+    { key: "messages", label: `Messages${unread > 0 ? ` (${unread})` : ""}` },
   ];
 
   return (
-    <div className="max-w-5xl mx-auto px-4 py-10">
-      {/* Profile Card */}
-      <div className="bg-white rounded-2xl border border-gray-100 p-6 mb-8 shadow-sm flex flex-col md:flex-row items-start gap-6">
-        <div className="w-20 h-20 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-700 font-bold text-3xl overflow-hidden shrink-0">
-          {user?.avatar ? (
-            <img
-              src={`http://localhost:5000${user.avatar}`}
-              alt="avatar"
-              className="w-full h-full object-cover"
-            />
+    <div
+      style={{ maxWidth: "64rem", margin: "0 auto", padding: "2.5rem 1rem" }}
+    >
+      {/* ── Profile Card ──────────────────────────────────── */}
+      <div
+        className="card"
+        style={{
+          display: "flex",
+          flexDirection: "column",
+          gap: "1rem",
+          marginBottom: "1.5rem",
+        }}
+      >
+        <div
+          style={{
+            display: "flex",
+            flexWrap: "wrap",
+            alignItems: "flex-start",
+            gap: "1.25rem",
+          }}
+        >
+          <div className="avatar avatar-xl">
+            {user?.avatar ? (
+              <img
+                src={`${BASE}${user.avatar}`}
+                alt="avatar"
+                style={{
+                  width: "100%",
+                  height: "100%",
+                  objectFit: "cover",
+                  borderRadius: "9999px",
+                }}
+              />
+            ) : (
+              user?.name?.[0]?.toUpperCase()
+            )}
+          </div>
+
+          {editMode ? (
+            <form
+              onSubmit={handleSaveProfile}
+              style={{
+                flex: 1,
+                display: "flex",
+                flexDirection: "column",
+                gap: "0.6rem",
+              }}
+            >
+              <input
+                value={form.name}
+                onChange={(e) =>
+                  setForm((p) => ({ ...p, name: e.target.value }))
+                }
+                className="form-input"
+                style={{ maxWidth: "18rem" }}
+              />
+              <input
+                value={form.phone}
+                onChange={(e) =>
+                  setForm((p) => ({ ...p, phone: e.target.value }))
+                }
+                className="form-input"
+                style={{ maxWidth: "18rem" }}
+              />
+              <input
+                type="file"
+                accept="image/*"
+                onChange={(e) => setAvatarFile(e.target.files[0])}
+                style={{ fontSize: "0.85rem", color: "#6b7280" }}
+              />
+              <div style={{ display: "flex", gap: "0.5rem" }}>
+                <button
+                  type="submit"
+                  disabled={saving}
+                  className="btn btn-primary"
+                  style={{ fontSize: "0.875rem" }}
+                >
+                  {saving ? "Saving…" : "Save"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setEditMode(false)}
+                  className="btn btn-secondary"
+                  style={{ fontSize: "0.875rem" }}
+                >
+                  Cancel
+                </button>
+              </div>
+            </form>
           ) : (
-            user?.name?.[0]?.toUpperCase()
+            <div style={{ flex: 1 }}>
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "0.75rem",
+                  marginBottom: "0.25rem",
+                }}
+              >
+                <h1
+                  style={{
+                    fontSize: "1.5rem",
+                    fontWeight: "800",
+                    color: "#1f2937",
+                  }}
+                >
+                  {user?.name}
+                </h1>
+                {user?.role === "admin" && (
+                  <span
+                    className="badge"
+                    style={{ background: "#fee2e2", color: "#dc2626" }}
+                  >
+                    Admin
+                  </span>
+                )}
+              </div>
+              <p
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "0.3rem",
+                  color: "#6b7280",
+                  fontSize: "0.875rem",
+                  marginBottom: "0.2rem",
+                }}
+              >
+                <FiMail style={{ color: "#059669" }} /> {user?.email}
+              </p>
+              <p
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "0.3rem",
+                  color: "#6b7280",
+                  fontSize: "0.875rem",
+                }}
+              >
+                <FiPhone style={{ color: "#059669" }} /> {user?.phone}
+              </p>
+              <button
+                onClick={() => setEditMode(true)}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "0.3rem",
+                  background: "none",
+                  border: "none",
+                  color: "#059669",
+                  fontSize: "0.875rem",
+                  fontWeight: "600",
+                  cursor: "pointer",
+                  marginTop: "0.75rem",
+                  padding: 0,
+                }}
+              >
+                <FiEdit /> Edit Profile
+              </button>
+            </div>
           )}
         </div>
-        {editMode ? (
-          <form onSubmit={handleSaveProfile} className="flex-1 space-y-3">
-            <input
-              value={form.name}
-              onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))}
-              className="border border-gray-200 rounded-xl px-4 py-2 text-sm w-full focus:outline-none focus:ring-2 focus:ring-emerald-400"
-            />
-            <input
-              value={form.phone}
-              onChange={(e) =>
-                setForm((p) => ({ ...p, phone: e.target.value }))
-              }
-              className="border border-gray-200 rounded-xl px-4 py-2 text-sm w-full focus:outline-none focus:ring-2 focus:ring-emerald-400"
-            />
-            <input
-              type="file"
-              accept="image/*"
-              onChange={(e) => setAvatarFile(e.target.files[0])}
-              className="text-sm text-gray-500"
-            />
-            <div className="flex gap-3">
-              <button
-                type="submit"
-                disabled={saving}
-                className="bg-emerald-600 text-white px-5 py-2 rounded-xl text-sm font-medium hover:bg-emerald-700 transition disabled:opacity-70"
-              >
-                {saving ? "Saving..." : "Save"}
-              </button>
-              <button
-                type="button"
-                onClick={() => setEditMode(false)}
-                className="border border-gray-200 px-5 py-2 rounded-xl text-sm font-medium hover:bg-gray-50 transition"
-              >
-                Cancel
-              </button>
-            </div>
-          </form>
-        ) : (
-          <div className="flex-1">
-            <div className="flex items-center gap-3 mb-1">
-              <h1 className="text-2xl font-bold text-gray-800">{user?.name}</h1>
-              {user?.role === "admin" && (
-                <span className="bg-red-100 text-red-600 text-xs font-bold px-2 py-0.5 rounded">
-                  Admin
-                </span>
-              )}
-            </div>
-            <p className="flex items-center gap-1 text-gray-500 text-sm mb-0.5">
-              <FiMail className="text-emerald-500" /> {user?.email}
-            </p>
-            <p className="flex items-center gap-1 text-gray-500 text-sm">
-              <FiPhone className="text-emerald-500" /> {user?.phone}
-            </p>
-            <button
-              onClick={() => setEditMode(true)}
-              className="mt-4 flex items-center gap-1 text-sm text-emerald-600 hover:underline"
-            >
-              <FiEdit /> Edit Profile
-            </button>
-          </div>
-        )}
       </div>
 
-      {/* Tabs */}
-      <div className="flex gap-1 bg-gray-100 p-1 rounded-xl mb-6 overflow-x-auto">
+      {/* ── Tab Bar ───────────────────────────────────────── */}
+      <div className="tab-bar" style={{ marginBottom: "1.25rem" }}>
         {tabs.map((t) => (
           <button
             key={t.key}
-            onClick={() => setActiveTab(t.key)}
-            className={`flex-1 px-4 py-2.5 rounded-lg text-sm font-medium transition whitespace-nowrap ${activeTab === t.key ? "bg-white shadow text-emerald-700" : "text-gray-500 hover:text-gray-700"}`}
+            onClick={() => {
+              setActiveTab(t.key);
+              if (t.key !== "messages") setActiveConvoId(null);
+            }}
+            className={`tab-item ${activeTab === t.key ? "active" : ""}`}
+            style={
+              t.key === "messages" && unread > 0
+                ? { color: "#059669", fontWeight: "700" }
+                : {}
+            }
           >
             {t.label}
           </button>
         ))}
       </div>
 
-      {/* Tab Content */}
+      {/* ── My Listings ───────────────────────────────────── */}
       {activeTab === "listings" &&
         (myListings.length === 0 ? (
-          <p className="text-center text-gray-400 py-12">
-            No listings yet.{" "}
-            <a href="/create" className="text-emerald-600 underline">
-              Post your first one!
-            </a>
-          </p>
+          <div className="empty-state">
+            <div className="empty-icon">🏠</div>
+            <h3>No listings yet</h3>
+            <p>
+              <a href="/create" style={{ color: "#059669" }}>
+                Post your first one!
+              </a>
+            </p>
+          </div>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-5">
+          <div className="listings-grid">
             {myListings.map((l) => (
               <ListingCard key={l._id} listing={l} />
             ))}
           </div>
         ))}
 
+      {/* ── Sent Requests ─────────────────────────────────── */}
       {activeTab === "sent" &&
         (sentRequests.length === 0 ? (
-          <p className="text-center text-gray-400 py-12">
-            You haven't sent any rent requests yet.
-          </p>
+          <div className="empty-state">
+            <div className="empty-icon">📬</div>
+            <h3>No sent requests</h3>
+          </div>
         ) : (
-          <div className="space-y-4">
+          <div
+            style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}
+          >
             {sentRequests.map((r) => (
               <div
                 key={r._id}
-                className="bg-white border border-gray-100 rounded-2xl p-5 shadow-sm flex gap-4"
+                className="card"
+                style={{ display: "flex", gap: "1rem", alignItems: "center" }}
               >
                 <img
                   src={
                     r.listing?.images?.[0]
-                      ? `http://localhost:5000${r.listing.images[0]}`
+                      ? `${BASE}${r.listing.images[0]}`
                       : "https://placehold.co/80x80"
                   }
                   alt=""
-                  className="w-16 h-16 rounded-xl object-cover"
+                  style={{
+                    width: "4rem",
+                    height: "4rem",
+                    borderRadius: "0.6rem",
+                    objectFit: "cover",
+                    flexShrink: 0,
+                  }}
                 />
-                <div className="flex-1">
-                  <h3 className="font-semibold text-gray-800">
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <h3
+                    style={{
+                      fontWeight: "600",
+                      color: "#1f2937",
+                      fontSize: "0.95rem",
+                    }}
+                  >
                     {r.listing?.title}
                   </h3>
-                  <p className="text-sm text-gray-500">
+                  <p style={{ fontSize: "0.8rem", color: "#6b7280" }}>
                     ৳{r.listing?.rent?.toLocaleString()}/mo ·{" "}
                     {r.listing?.location?.city}
                   </p>
                   {r.message && (
-                    <p className="text-sm text-gray-400 mt-1 italic">
+                    <p
+                      style={{
+                        fontSize: "0.8rem",
+                        color: "#9ca3af",
+                        fontStyle: "italic",
+                        marginTop: "0.2rem",
+                      }}
+                    >
                       "{r.message}"
                     </p>
                   )}
                 </div>
-                <span
-                  className={`text-xs font-bold px-3 py-1 rounded-full h-fit ${STATUS_COLORS[r.status]}`}
-                >
+                <span className={`badge ${STATUS_COLORS[r.status]}`}>
                   {r.status}
                 </span>
               </div>
@@ -232,75 +877,96 @@ export default function Profile() {
           </div>
         ))}
 
+      {/* ── Received Requests ─────────────────────────────── */}
       {activeTab === "received" &&
         (receivedRequests.length === 0 ? (
-          <p className="text-center text-gray-400 py-12">
-            No one has sent a request for your properties yet.
-          </p>
+          <div className="empty-state">
+            <div className="empty-icon">📥</div>
+            <h3>No received requests</h3>
+          </div>
         ) : (
-          <div className="space-y-4">
+          <div
+            style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}
+          >
             {receivedRequests.map((r) => (
-              <div
-                key={r._id}
-                className="bg-white border border-gray-100 rounded-2xl p-5 shadow-sm"
-              >
-                <div className="flex items-start gap-4">
-                  <div className="w-12 h-12 bg-emerald-100 rounded-full flex items-center justify-center text-emerald-700 font-bold text-lg overflow-hidden shrink-0">
-                    {r.requester?.avatar ? (
-                      <img
-                        src={`http://localhost:5000${r.requester.avatar}`}
-                        alt=""
-                        className="w-full h-full object-cover"
-                      />
-                    ) : (
-                      r.requester?.name?.[0]?.toUpperCase()
-                    )}
-                  </div>
-                  <div className="flex-1">
-                    <div className="flex justify-between items-start">
+              <div key={r._id} className="card">
+                <div
+                  style={{
+                    display: "flex",
+                    gap: "0.75rem",
+                    alignItems: "flex-start",
+                  }}
+                >
+                  <Avatar user={r.requester} size={44} />
+                  <div style={{ flex: 1 }}>
+                    <div
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "flex-start",
+                        marginBottom: "0.25rem",
+                      }}
+                    >
                       <div>
-                        <h3 className="font-semibold text-gray-800">
+                        <p style={{ fontWeight: "700", color: "#1f2937" }}>
                           {r.requester?.name}
-                        </h3>
-                        <p className="text-sm text-gray-500">
+                        </p>
+                        <p style={{ fontSize: "0.8rem", color: "#6b7280" }}>
                           {r.requester?.phone} · {r.requester?.email}
                         </p>
                       </div>
-                      <span
-                        className={`text-xs font-bold px-3 py-1 rounded-full ${STATUS_COLORS[r.status]}`}
-                      >
+                      <span className={`badge ${STATUS_COLORS[r.status]}`}>
                         {r.status}
                       </span>
                     </div>
-                    <p className="text-sm text-gray-500 mt-1">
+                    <p style={{ fontSize: "0.85rem", color: "#6b7280" }}>
                       For:{" "}
-                      <span className="text-gray-700 font-medium">
-                        {r.listing?.title}
-                      </span>
+                      <b style={{ color: "#374151" }}>{r.listing?.title}</b>
                     </p>
                     {r.message && (
-                      <p className="text-sm text-gray-400 mt-1 italic">
+                      <p
+                        style={{
+                          fontSize: "0.8rem",
+                          color: "#9ca3af",
+                          fontStyle: "italic",
+                          marginTop: "0.2rem",
+                        }}
+                      >
                         "{r.message}"
                       </p>
                     )}
                     {r.moveInDate && (
-                      <p className="text-xs text-gray-400 mt-0.5">
+                      <p
+                        style={{
+                          fontSize: "0.75rem",
+                          color: "#9ca3af",
+                          marginTop: "0.15rem",
+                        }}
+                      >
                         Move-in: {new Date(r.moveInDate).toLocaleDateString()}
                       </p>
                     )}
                   </div>
                 </div>
                 {r.status === "pending" && (
-                  <div className="flex gap-2 mt-4">
+                  <div
+                    style={{
+                      display: "flex",
+                      gap: "0.5rem",
+                      marginTop: "1rem",
+                    }}
+                  >
                     <button
                       onClick={() => handleRequestAction(r._id, "approved")}
-                      className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white py-2 rounded-xl text-sm font-medium transition"
+                      className="btn btn-primary"
+                      style={{ flex: 1, fontSize: "0.875rem" }}
                     >
                       ✅ Approve
                     </button>
                     <button
                       onClick={() => handleRequestAction(r._id, "rejected")}
-                      className="flex-1 bg-red-100 hover:bg-red-200 text-red-600 py-2 rounded-xl text-sm font-medium transition"
+                      className="btn btn-danger"
+                      style={{ flex: 1, fontSize: "0.875rem" }}
                     >
                       ❌ Reject
                     </button>
@@ -310,6 +976,67 @@ export default function Profile() {
             ))}
           </div>
         ))}
+
+      {/* ── Messages ──────────────────────────────────────── */}
+      {activeTab === "messages" && (
+        <div
+          style={{
+            background: "#fff",
+            border: "1px solid #f1f5f9",
+            borderRadius: "1rem",
+            overflow: "hidden",
+            display: "flex",
+            height: "32rem",
+            boxShadow: "0 2px 8px rgba(0,0,0,0.05)",
+          }}
+        >
+          {/* Conversation list */}
+          <div
+            style={{
+              width: "18rem",
+              flexShrink: 0,
+              borderRight: "1px solid #f1f5f9",
+              display: "flex",
+              flexDirection: "column",
+            }}
+          >
+            <div
+              style={{
+                padding: "1rem",
+                borderBottom: "1px solid #f1f5f9",
+                fontWeight: "700",
+                fontSize: "0.95rem",
+                color: "#1f2937",
+              }}
+            >
+              💬 Conversations
+            </div>
+            <ConvoList
+              convos={conversations}
+              activeId={activeConvoId}
+              onSelect={(cid) => {
+                setActiveConvoId(cid);
+                // Re-fetch conversations to update unread count after viewing
+                setTimeout(
+                  () =>
+                    api
+                      .get("/conversations")
+                      .then((r) => setConversations(r.data)),
+                  1000,
+                );
+              }}
+              currentUserId={user?._id}
+            />
+          </div>
+
+          {/* Chat window */}
+          <ChatWindow
+            convoId={activeConvoId}
+            currentUserId={user?._id}
+            onBack={() => setActiveConvoId(null)}
+          />
+        </div>
+      )}
     </div>
   );
 }

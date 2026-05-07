@@ -1,6 +1,8 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { FiSearch, FiArrowRight } from "react-icons/fi";
+import api from "../api/axios";
+import ListingCard from "../components/ListingCard";
+import { FiSearch, FiArrowRight, FiHome, FiTrendingUp } from "react-icons/fi";
 
 const TYPES = [
   { label: "Family", value: "family", emoji: "👨‍👩‍👧‍👦" },
@@ -19,10 +21,30 @@ const POPULAR_CITIES = [
   "Comilla",
 ];
 
+const STATS = [
+  { value: "500+", label: "Active Listings" },
+  { value: "1,200+", label: "Happy Tenants" },
+  { value: "6", label: "Major Cities" },
+  { value: "100%", label: "Verified Posts" },
+];
+
 export default function Home() {
   const [search, setSearch] = useState("");
   const [city, setCity] = useState("");
+  const [listings, setListings] = useState([]);
+  const [loadingListings, setLoadingListings] = useState(true);
   const navigate = useNavigate();
+
+  // Fetch 8 latest available listings for the preview section
+  useEffect(() => {
+    api
+      .get("/listings", {
+        params: { limit: 8, sort: "-createdAt", status: "available" },
+      })
+      .then(({ data }) => setListings(data.listings || []))
+      .catch(() => setListings([]))
+      .finally(() => setLoadingListings(false));
+  }, []);
 
   const handleSearch = (e) => {
     e.preventDefault();
@@ -34,34 +56,63 @@ export default function Home() {
 
   return (
     <div>
-      {/* Hero */}
-      <section className="bg-gradient-to-br from-emerald-700 via-emerald-600 to-teal-500 text-white py-24 px-4">
-        <div className="max-w-4xl mx-auto text-center">
-          <h1 className="text-5xl md:text-6xl font-extrabold mb-4 leading-tight">
+      {/* ── Hero ────────────────────────────────────────────── */}
+      <section className="hero">
+        <div style={{ maxWidth: "56rem", margin: "0 auto" }}>
+          <h1 className="hero-title animate-fade-in">
             Find Your Perfect <br />
-            <span className="text-yellow-300">To-Let</span> in Bangladesh
+            <span style={{ color: "#6ee7b7" }}>To-Let</span> in Bangladesh
           </h1>
-          <p className="text-emerald-100 text-xl mb-10">
+          <p className="hero-subtitle animate-fade-in">
             Thousands of verified rental listings — Family, Bachelor, Sub-let,
-            and more
+            Office &amp; more
           </p>
 
-          {/* Search Bar */}
-          <form
-            onSubmit={handleSearch}
-            className="bg-white rounded-2xl p-2 flex flex-col md:flex-row gap-2 shadow-2xl max-w-3xl mx-auto"
-          >
-            <input
-              type="text"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search by area, title..."
-              className="flex-1 px-4 py-3 text-gray-700 rounded-xl outline-none"
-            />
+          {/* Search bar */}
+          <form onSubmit={handleSearch} className="hero-search animate-fade-in">
+            <div style={{ position: "relative", flex: 1, minWidth: 0 }}>
+              <FiSearch
+                style={{
+                  position: "absolute",
+                  left: "1rem",
+                  top: "50%",
+                  transform: "translateY(-50%)",
+                  color: "#9ca3af",
+                  pointerEvents: "none",
+                }}
+              />
+              <input
+                type="text"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search by area, title, keyword…"
+                style={{
+                  paddingLeft: "2.5rem",
+                  width: "100%",
+                  border: "none",
+                  outline: "none",
+                  padding: "0.75rem 0.75rem 0.75rem 2.5rem",
+                  fontSize: "0.9rem",
+                  borderRadius: "0.6rem",
+                  fontFamily: "Inter, sans-serif",
+                  color: "#374151",
+                  background: "transparent",
+                }}
+              />
+            </div>
             <select
               value={city}
               onChange={(e) => setCity(e.target.value)}
-              className="px-4 py-3 text-gray-700 rounded-xl outline-none border border-gray-200 bg-gray-50"
+              style={{
+                padding: "0.75rem 1rem",
+                color: "#374151",
+                borderRadius: "0.6rem",
+                outline: "none",
+                border: "1px solid #e5e7eb",
+                background: "#f9fafb",
+                fontSize: "0.875rem",
+                fontFamily: "Inter, sans-serif",
+              }}
             >
               <option value="">All Cities</option>
               {POPULAR_CITIES.map((c) => (
@@ -70,52 +121,370 @@ export default function Home() {
                 </option>
               ))}
             </select>
-            <button
-              type="submit"
-              className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-6 py-3 rounded-xl flex items-center gap-2 transition"
-            >
+            <button type="submit">
               <FiSearch /> Search
             </button>
           </form>
         </div>
       </section>
 
-      {/* Type Cards */}
-      <section className="max-w-6xl mx-auto px-4 py-16">
-        <h2 className="text-3xl font-bold text-gray-800 mb-2 text-center">
-          Browse by Type
-        </h2>
-        <p className="text-center text-gray-500 mb-8">
-          Choose what fits your needs
-        </p>
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-4">
+      {/* ── Stats Bar ───────────────────────────────────────── */}
+      <section style={{ background: "#065f46", padding: "1.25rem 1rem" }}>
+        <div
+          style={{
+            maxWidth: "56rem",
+            margin: "0 auto",
+            display: "flex",
+            justifyContent: "space-around",
+            flexWrap: "wrap",
+            gap: "1rem",
+          }}
+        >
+          {STATS.map((s) => (
+            <div key={s.label} style={{ textAlign: "center" }}>
+              <div
+                style={{
+                  fontSize: "1.5rem",
+                  fontWeight: "900",
+                  color: "#6ee7b7",
+                }}
+              >
+                {s.value}
+              </div>
+              <div
+                style={{
+                  fontSize: "0.78rem",
+                  color: "rgba(255,255,255,0.7)",
+                  marginTop: "0.1rem",
+                }}
+              >
+                {s.label}
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* ── Browse by Type ──────────────────────────────────── */}
+      <section
+        style={{
+          maxWidth: "72rem",
+          margin: "0 auto",
+          padding: "4rem 1rem 2rem",
+        }}
+      >
+        <div style={{ textAlign: "center", marginBottom: "2rem" }}>
+          <h2
+            style={{
+              fontSize: "1.875rem",
+              fontWeight: "800",
+              color: "#1f2937",
+              marginBottom: "0.4rem",
+            }}
+          >
+            Browse by Type
+          </h2>
+          <p style={{ color: "#6b7280" }}>
+            Choose the rental type that fits your lifestyle
+          </p>
+        </div>
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(5, 1fr)",
+            gap: "1rem",
+          }}
+        >
           {TYPES.map((t) => (
             <button
               key={t.value}
               onClick={() => navigate(`/listings?type=${t.value}`)}
-              className="bg-white border border-gray-200 rounded-2xl p-5 text-center hover:border-emerald-400 hover:shadow-md transition group flex flex-col items-center"
+              className="type-card"
             >
-              <span className="text-4xl mb-2">{t.emoji}</span>
-              <span className="font-semibold text-gray-700 group-hover:text-emerald-600 transition">
-                {t.label}
-              </span>
+              <span className="type-emoji">{t.emoji}</span>
+              <span className="type-label">{t.label}</span>
             </button>
           ))}
         </div>
       </section>
 
-      {/* Popular Cities */}
-      <section className="bg-gray-100 py-14 px-4">
-        <div className="max-w-6xl mx-auto">
-          <h2 className="text-3xl font-bold text-gray-800 mb-8 text-center">
-            Popular Cities
-          </h2>
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-4">
+      {/* ── Featured / Latest Listings ──────────────────────── */}
+      <section
+        style={{
+          maxWidth: "72rem",
+          margin: "0 auto",
+          padding: "2rem 1rem 4rem",
+        }}
+      >
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "flex-end",
+            marginBottom: "1.5rem",
+            flexWrap: "wrap",
+            gap: "1rem",
+          }}
+        >
+          <div>
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "0.5rem",
+                marginBottom: "0.3rem",
+              }}
+            >
+              <FiTrendingUp style={{ color: "#059669", fontSize: "1.25rem" }} />
+              <h2
+                style={{
+                  fontSize: "1.875rem",
+                  fontWeight: "800",
+                  color: "#1f2937",
+                }}
+              >
+                Latest Listings
+              </h2>
+            </div>
+            <p style={{ color: "#6b7280", fontSize: "0.9rem" }}>
+              Fresh rentals just posted — grab them before they're gone
+            </p>
+          </div>
+
+          {/* ✅ See More button → goes to Listings page */}
+          <button
+            onClick={() => navigate("/listings")}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "0.5rem",
+              background: "transparent",
+              border: "2px solid #059669",
+              color: "#059669",
+              fontWeight: "700",
+              fontSize: "0.9rem",
+              padding: "0.6rem 1.4rem",
+              borderRadius: "0.75rem",
+              cursor: "pointer",
+              transition: "all 0.2s",
+              fontFamily: "Inter, sans-serif",
+              whiteSpace: "nowrap",
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = "#059669";
+              e.currentTarget.style.color = "#fff";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = "transparent";
+              e.currentTarget.style.color = "#059669";
+            }}
+          >
+            See All Listings <FiArrowRight />
+          </button>
+        </div>
+
+        {/* Listings grid */}
+        {loadingListings ? (
+          <div className="listings-grid">
+            {Array(8)
+              .fill(0)
+              .map((_, i) => (
+                <div
+                  key={i}
+                  style={{ borderRadius: "1rem", overflow: "hidden" }}
+                >
+                  <div
+                    className="skeleton"
+                    style={{ height: "12rem", borderRadius: "1rem 1rem 0 0" }}
+                  />
+                  <div
+                    style={{
+                      padding: "1rem",
+                      background: "#fff",
+                      borderRadius: "0 0 1rem 1rem",
+                      border: "1px solid #f1f5f9",
+                      borderTop: "none",
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: "0.5rem",
+                    }}
+                  >
+                    <div
+                      className="skeleton"
+                      style={{ height: "1rem", width: "80%" }}
+                    />
+                    <div
+                      className="skeleton"
+                      style={{ height: "0.8rem", width: "55%" }}
+                    />
+                    <div
+                      className="skeleton"
+                      style={{
+                        height: "1.2rem",
+                        width: "40%",
+                        marginTop: "0.5rem",
+                      }}
+                    />
+                  </div>
+                </div>
+              ))}
+          </div>
+        ) : listings.length === 0 ? (
+          <div
+            style={{
+              textAlign: "center",
+              padding: "4rem 1rem",
+              background: "#f9fafb",
+              borderRadius: "1rem",
+              border: "1.5px dashed #e5e7eb",
+            }}
+          >
+            <div style={{ fontSize: "3rem", marginBottom: "0.75rem" }}>🏠</div>
+            <h3
+              style={{
+                fontWeight: "600",
+                color: "#4b5563",
+                marginBottom: "0.4rem",
+              }}
+            >
+              No listings yet
+            </h3>
+            <p
+              style={{
+                color: "#9ca3af",
+                fontSize: "0.875rem",
+                marginBottom: "1.25rem",
+              }}
+            >
+              Be the first to post a rental property!
+            </p>
+            <button
+              onClick={() => navigate("/create")}
+              style={{
+                background: "#059669",
+                color: "#fff",
+                border: "none",
+                borderRadius: "0.75rem",
+                padding: "0.75rem 1.5rem",
+                fontWeight: "700",
+                cursor: "pointer",
+                fontSize: "0.9rem",
+                fontFamily: "Inter, sans-serif",
+              }}
+            >
+              Post a Listing
+            </button>
+          </div>
+        ) : (
+          <>
+            <div className="listings-grid">
+              {listings.map((l) => (
+                <ListingCard key={l._id} listing={l} />
+              ))}
+            </div>
+
+            {/* ✅ Bottom "See More" banner */}
+            <div
+              style={{
+                marginTop: "2.5rem",
+                background: "linear-gradient(135deg, #ecfdf5, #f0fdfa)",
+                border: "1.5px solid #a7f3d0",
+                borderRadius: "1rem",
+                padding: "2rem",
+                textAlign: "center",
+              }}
+            >
+              <FiHome
+                style={{
+                  fontSize: "2rem",
+                  color: "#059669",
+                  marginBottom: "0.5rem",
+                  display: "block",
+                  margin: "0 auto 0.5rem",
+                }}
+              />
+              <h3
+                style={{
+                  fontWeight: "700",
+                  color: "#065f46",
+                  fontSize: "1.1rem",
+                  marginBottom: "0.3rem",
+                }}
+              >
+                Want to see more?
+              </h3>
+              <p
+                style={{
+                  color: "#4b5563",
+                  fontSize: "0.875rem",
+                  marginBottom: "1.25rem",
+                }}
+              >
+                Browse all available rentals with powerful filters — by area,
+                price, rooms and more.
+              </p>
+              <button
+                onClick={() => navigate("/listings")}
+                style={{
+                  background: "#059669",
+                  color: "#fff",
+                  border: "none",
+                  borderRadius: "0.75rem",
+                  padding: "0.8rem 2rem",
+                  fontWeight: "700",
+                  fontSize: "1rem",
+                  cursor: "pointer",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "0.5rem",
+                  fontFamily: "Inter, sans-serif",
+                  transition: "background 0.2s",
+                  boxShadow: "0 4px 12px rgba(5,150,105,0.3)",
+                }}
+                onMouseEnter={(e) =>
+                  (e.currentTarget.style.background = "#047857")
+                }
+                onMouseLeave={(e) =>
+                  (e.currentTarget.style.background = "#059669")
+                }
+              >
+                Browse All Listings <FiArrowRight />
+              </button>
+            </div>
+          </>
+        )}
+      </section>
+
+      {/* ── Popular Cities ──────────────────────────────────── */}
+      <section style={{ background: "#f3f4f6", padding: "4rem 1rem" }}>
+        <div style={{ maxWidth: "72rem", margin: "0 auto" }}>
+          <div style={{ textAlign: "center", marginBottom: "2rem" }}>
+            <h2
+              style={{
+                fontSize: "1.875rem",
+                fontWeight: "800",
+                color: "#1f2937",
+                marginBottom: "0.4rem",
+              }}
+            >
+              Popular Cities
+            </h2>
+            <p style={{ color: "#6b7280" }}>
+              Find rentals in cities across Bangladesh
+            </p>
+          </div>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(6, 1fr)",
+              gap: "0.75rem",
+            }}
+          >
             {POPULAR_CITIES.map((c) => (
               <button
                 key={c}
                 onClick={() => navigate(`/listings?city=${c}`)}
-                className="bg-white rounded-xl py-4 font-medium text-gray-700 hover:bg-emerald-600 hover:text-white transition shadow-sm border border-gray-200"
+                className="city-card"
               >
                 {c}
               </button>
@@ -124,20 +493,68 @@ export default function Home() {
         </div>
       </section>
 
-      {/* CTA */}
-      <section className="py-16 px-4 text-center bg-white">
-        <h2 className="text-3xl font-bold text-gray-800 mb-4">
-          Have a Property to Rent?
-        </h2>
-        <p className="text-gray-500 mb-6">
-          List your property for free and reach thousands of potential tenants
-        </p>
-        <button
-          onClick={() => navigate("/create")}
-          className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-8 py-4 rounded-xl inline-flex items-center gap-2 text-lg transition"
-        >
-          Post Your Rental <FiArrowRight />
-        </button>
+      {/* ── Post CTA ────────────────────────────────────────── */}
+      <section
+        style={{
+          padding: "5rem 1rem",
+          textAlign: "center",
+          background: "#fff",
+        }}
+      >
+        <div style={{ maxWidth: "36rem", margin: "0 auto" }}>
+          <div style={{ fontSize: "3rem", marginBottom: "1rem" }}>🏠</div>
+          <h2
+            style={{
+              fontSize: "2rem",
+              fontWeight: "800",
+              color: "#1f2937",
+              marginBottom: "0.75rem",
+            }}
+          >
+            Have a Property to Rent?
+          </h2>
+          <p
+            style={{
+              color: "#6b7280",
+              marginBottom: "2rem",
+              lineHeight: "1.6",
+            }}
+          >
+            List your property for free and reach thousands of potential tenants
+            across Bangladesh.
+          </p>
+          <button
+            onClick={() => navigate("/create")}
+            style={{
+              background: "#059669",
+              color: "#fff",
+              border: "none",
+              borderRadius: "0.75rem",
+              padding: "1rem 2.5rem",
+              fontWeight: "700",
+              fontSize: "1.1rem",
+              cursor: "pointer",
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "0.5rem",
+              fontFamily: "Inter, sans-serif",
+              transition: "background 0.2s, box-shadow 0.2s",
+              boxShadow: "0 4px 16px rgba(5,150,105,0.3)",
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = "#047857";
+              e.currentTarget.style.boxShadow =
+                "0 6px 20px rgba(5,150,105,0.4)";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = "#059669";
+              e.currentTarget.style.boxShadow =
+                "0 4px 16px rgba(5,150,105,0.3)";
+            }}
+          >
+            Post Your Rental <FiArrowRight />
+          </button>
+        </div>
       </section>
     </div>
   );

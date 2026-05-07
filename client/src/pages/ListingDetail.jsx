@@ -82,9 +82,9 @@ export default function ListingDetail() {
   if (!listing) return null;
 
   const isOwner = user && listing.owner._id === user._id;
-  const BASE    = 'http://localhost:5000';
+  //const BASE    = 'http://localhost:5000';
   const imgs    = listing.images?.length > 0
-    ? listing.images.map((i) => `${BASE}${i}`)
+    ? listing.images
     : ['https://placehold.co/800x500/e2e8f0/64748b?text=No+Image'];
 
   const mapLat  = listing.location?.lat;

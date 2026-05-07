@@ -1,69 +1,64 @@
-// src/components/ListingCard.jsx
-import { Link } from "react-router-dom";
-import { FiMapPin, FiHome, FiDollarSign, FiEye } from "react-icons/fi";
+import { Link } from 'react-router-dom';
+import { FiMapPin, FiHome, FiEye } from 'react-icons/fi';
+import { imgUrl } from '../api/axios';
 
 const TYPE_COLORS = {
-  family: "bg-blue-100 text-blue-700",
-  bachelor: "bg-yellow-100 text-yellow-700",
-  sublet: "bg-purple-100 text-purple-700",
-  office: "bg-red-100 text-red-700",
-  seat: "bg-green-100 text-green-700",
+  family:   'badge-family',
+  bachelor: 'badge-bachelor',
+  sublet:   'badge-sublet',
+  office:   'badge-office',
+  seat:     'badge-seat',
 };
 
 export default function ListingCard({ listing }) {
   const img = listing.images?.[0]
-    ? `http://localhost:5000${listing.images[0]}`
-    : "https://placehold.co/400x250/e2e8f0/64748b?text=No+Image";
+    ? imgUrl(listing.images[0])
+    : 'https://placehold.co/400x250/e2e8f0/64748b?text=No+Image';
 
   return (
-    <Link
-      to={`/listings/${listing._id}`}
-      className="group bg-white rounded-2xl shadow hover:shadow-xl transition-all overflow-hidden border border-gray-100 flex flex-col"
-    >
-      <div className="relative">
+    <Link to={`/listings/${listing._id}`} className="listing-card" style={{ textDecoration: 'none' }}>
+      <div style={{ position: 'relative', overflow: 'hidden' }}>
         <img
           src={img}
           alt={listing.title}
-          className="w-full h-48 object-cover group-hover:scale-105 transition-transform duration-300"
+          style={{ width: '100%', height: '12rem', objectFit: 'cover', display: 'block', transition: 'transform 0.4s' }}
         />
-        <span
-          className={`absolute top-3 left-3 text-xs font-bold px-3 py-1 rounded-full capitalize ${TYPE_COLORS[listing.type] || "bg-gray-100 text-gray-700"}`}
-        >
+        <span className={`badge ${TYPE_COLORS[listing.type] || ''}`}
+          style={{ position: 'absolute', top: '0.75rem', left: '0.75rem', textTransform: 'capitalize' }}>
           {listing.type}
         </span>
-        {listing.status === "rented" && (
-          <span className="absolute top-3 right-3 bg-red-500 text-white text-xs font-bold px-2 py-1 rounded-full">
+        {listing.status === 'rented' && (
+          <span className="badge badge-rented" style={{ position: 'absolute', top: '0.75rem', right: '0.75rem' }}>
             Rented
           </span>
         )}
       </div>
-      <div className="p-4 flex flex-col flex-1">
-        <h3 className="font-semibold text-gray-800 text-lg leading-tight line-clamp-1 group-hover:text-emerald-600 transition">
+
+      <div style={{ padding: '1rem', display: 'flex', flexDirection: 'column', flex: 1 }}>
+        <h3 style={{ fontWeight: '600', color: '#1f2937', fontSize: '1rem', lineHeight: '1.3', marginBottom: '0.3rem' }}
+          className="line-clamp-1">
           {listing.title}
         </h3>
-        <p className="text-sm text-gray-500 flex items-center gap-1 mt-1">
-          <FiMapPin className="text-emerald-500 shrink-0" />
-          {listing.location?.area && `${listing.location.area}, `}
-          {listing.location?.city}
+        <p style={{ fontSize: '0.8rem', color: '#6b7280', display: 'flex', alignItems: 'center', gap: '0.25rem', marginBottom: '0.5rem' }}>
+          <FiMapPin style={{ color: '#059669', flexShrink: 0 }} />
+          {listing.location?.area && `${listing.location.area}, `}{listing.location?.city}
         </p>
-        <div className="flex items-center gap-4 mt-3 text-sm text-gray-600">
-          <span className="flex items-center gap-1">
+        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', fontSize: '0.8rem', color: '#6b7280', marginBottom: '0.75rem' }}>
+          <span style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
             <FiHome /> {listing.bedrooms} Bed
           </span>
-          <span className="flex items-center gap-1 capitalize">
-            {listing.furnished}
-          </span>
-          <span className="flex items-center gap-1 ml-auto text-gray-400">
+          <span style={{ textTransform: 'capitalize' }}>{listing.furnished}</span>
+          <span style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', marginLeft: 'auto', color: '#9ca3af' }}>
             <FiEye /> {listing.views}
           </span>
         </div>
-        <div className="mt-3 pt-3 border-t border-gray-100 flex justify-between items-center">
-          <p className="text-emerald-600 font-bold text-lg">
+        <div style={{ borderTop: '1px solid #f1f5f9', paddingTop: '0.75rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <p style={{ color: '#059669', fontWeight: '800', fontSize: '1.1rem' }}>
             ৳{listing.rent.toLocaleString()}
-            <span className="text-gray-400 font-normal text-sm">/mo</span>
+            <span style={{ color: '#9ca3af', fontWeight: '400', fontSize: '0.8rem' }}>/mo</span>
           </p>
           {listing.negotiable && (
-            <span className="text-xs text-gray-400 bg-gray-100 px-2 py-0.5 rounded">
+            <span style={{ fontSize: '0.7rem', color: '#6b7280', background: '#f3f4f6', padding: '0.15rem 0.5rem', borderRadius: '9999px' }}>
               Negotiable
             </span>
           )}

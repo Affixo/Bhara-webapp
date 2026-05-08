@@ -1,39 +1,33 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import api from '../api/axios';
+import api, { imgUrl } from '../api/axios';
 import MapPicker from '../components/MapPicker';
 import toast from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
-import { FiTrash2, FiPlus } from 'react-icons/fi';
+import { FiTrash2, FiUpload, FiAlertCircle } from 'react-icons/fi';
 
 const AMENITIES_OPTIONS = [
   'Gas', 'WiFi', 'Parking', 'Generator', 'Lift',
   'Security', 'CCTV', 'Water 24/7', 'Rooftop', 'Garden',
 ];
 
-const BASE = 'http://localhost:5000';
+const MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024;
+const MAX_IMAGES = 8;
 
 export default function EditListing() {
-  const { id }     = useParams();
-  const { user }   = useAuth();
-  const navigate   = useNavigate();
+  const { id }   = useParams();
+  const { user } = useAuth();
+  const navigate = useNavigate();
 
-  const [loading, setLoading]   = useState(true);
-  const [saving, setSaving]     = useState(false);
-
-  const [form, setForm]         = useState({});
-  const [amenities, setAmenities] = useState([]);
-  const [lat, setLat]           = useState(null);
-  const [lng, setLng]           = useState(null);
-
-  // Existing images (URLs already on server)
+  const [loading, setLoading]             = useState(true);
+  const [saving, setSaving]               = useState(false);
+  const [form, setForm]                   = useState({});
+  const [amenities, setAmenities]         = useState([]);
+  const [lat, setLat]                     = useState(null);
+  const [lng, setLng]                     = useState(null);
   const [existingImages, setExistingImages] = useState([]);
-  // New images picked by user (File objects)
-  const [newImageFiles, setNewImageFiles]   = useState([]);
-  const [newPreviews, setNewPreviews]       = useState([]);
-
-  // Images being deleted (optimistic)
-  const [deletingUrl, setDeletingUrl] = useState(null);
+  const [newImages, setNewImages]         = useState([]); // { file, preview, error }
+  const [deletingUrl, setDeletingUrl]     = useState(null);
 
   useEffect(() => {
     api.get(`/listings/${id}`).then(({ data }) => {
@@ -64,6 +58,9 @@ export default function EditListing() {
       setLng(data.location?.lng ?? null);
       setExistingImages(data.images || []);
       setLoading(false);
+    }).catch(() => {
+      toast.error('Failed to load listing');
+      navigate('/profile');
     });
   }, [id]);
 
@@ -73,15 +70,15 @@ export default function EditListing() {
   };
 
   const toggleAmenity = (a) =>
-    setAmenities((prev) => prev.includes(a) ? prev.filter((x) => x !== a) : [...prev, a]);
+    setAmenities((p) => p.includes(a) ? p.filter((x) => x !== a) : [...p, a]);
 
   const handleLocationSelect = useCallback((newLat, newLng) => {
     setLat(newLat);
     setLng(newLng);
   }, []);
 
-  // ✅ Delete an existing image from server
-  const handleDeleteImage = async (imageUrl) => {
+  // ✅ Delete an existing Cloudinary image
+  const handleDeleteExisting = async (imageUrl) => {
     if (!window.confirm('Remove this photo?')) return;
     setDeletingUrl(imageUrl);
     try {
@@ -94,22 +91,39 @@ export default function EditListing() {
     setDeletingUrl(null);
   };
 
-  // ✅ Handle new image file picks
+  // ✅ Pick new images with size validation
   const handleNewImages = (e) => {
-    const files = Array.from(e.target.files).slice(0, 8 - existingImages.length);
-    setNewImageFiles(files);
-    setNewPreviews(files.map((f) => URL.createObjectURL(f)));
+    const picked = Array.from(e.target.files);
+    const remaining = MAX_IMAGES - existingImages.length - newImages.length;
+    const entries = picked.slice(0, remaining).map((file) => ({
+      file,
+      preview: URL.createObjectURL(file),
+      error: file.size > MAX_FILE_SIZE_BYTES
+        ? `Too large (${(file.size / 1024 / 1024).toFixed(1)} MB). Max 5 MB.`
+        : null,
+    }));
+    setNewImages((prev) => [...prev, ...entries]);
+    e.target.value = '';
   };
 
-  // Remove a newly picked (not yet uploaded) image
-  const removeNewPreview = (index) => {
-    setNewImageFiles((prev) => prev.filter((_, i) => i !== index));
-    setNewPreviews((prev) => prev.filter((_, i) => i !== index));
+  const removeNewImage = (index) => {
+    setNewImages((prev) => {
+      const updated = [...prev];
+      URL.revokeObjectURL(updated[index].preview);
+      updated.splice(index, 1);
+      return updated;
+    });
   };
+
+  const validNewImages = newImages.filter((i) => !i.error);
+  const hasErrors      = newImages.some((i) => i.error);
+  const totalPhotos    = existingImages.length + newImages.length;
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (hasErrors) return toast.error('Remove oversized photos before saving.');
     setSaving(true);
+
     const fd = new FormData();
     Object.entries(form).forEach(([k, v]) => fd.append(k, v));
     fd.append('amenities', JSON.stringify(amenities));
@@ -117,14 +131,21 @@ export default function EditListing() {
       fd.append('lat', lat.toString());
       fd.append('lng', lng.toString());
     }
-    newImageFiles.forEach((img) => fd.append('images', img));
+    validNewImages.forEach((img) => fd.append('images', img.file));
 
     try {
-      await api.put(`/listings/${id}`, fd, { headers: { 'Content-Type': 'multipart/form-data' } });
+      await api.put(`/listings/${id}`, fd, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
       toast.success('Listing updated!');
       navigate(`/listings/${id}`);
-    } catch {
-      toast.error('Update failed');
+    } catch (err) {
+      const msg = err.response?.data?.message;
+      if (err.response?.status === 413 || msg?.toLowerCase().includes('size')) {
+        toast.error('One or more photos are too large. Max 5 MB each.');
+      } else {
+        toast.error(msg || 'Update failed. Please try again.');
+      }
     }
     setSaving(false);
   };
@@ -134,30 +155,26 @@ export default function EditListing() {
 
   if (loading) return <div className="spinner-page"><div className="spinner" /></div>;
 
-  const totalPhotos = existingImages.length + newImageFiles.length;
-
   return (
-    <div className="max-w-3xl mx-auto px-4 py-10">
+    <div style={{ maxWidth: '48rem', margin: '0 auto', padding: '2.5rem 1rem' }}>
       <h1 className="text-3xl font-bold text-gray-800 mb-2">Edit Listing</h1>
       <p className="text-gray-500 mb-8">Update your rental property details</p>
 
-      <form onSubmit={handleSubmit} className="space-y-6">
+      <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
 
         {/* ── Basic Info ──────────────────────────────────── */}
-        <section className="bg-white rounded-2xl border border-gray-100 p-6 space-y-4 shadow-sm">
+        <section className="card" style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
           <h2 className="font-bold text-gray-700 text-lg">📝 Basic Information</h2>
-
           <div>
             <label className={labelCls}>Title</label>
             <input name="title" value={form.title || ''} onChange={handleChange} className={inputCls} required />
           </div>
-
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className={labelCls}>Type</label>
               <select name="type" value={form.type || 'family'} onChange={handleChange} className={inputCls}>
                 {['family','bachelor','sublet','office','seat'].map((t) => (
-                  <option key={t} value={t} className="capitalize">{t}</option>
+                  <option key={t} value={t}>{t.charAt(0).toUpperCase() + t.slice(1)}</option>
                 ))}
               </select>
             </div>
@@ -166,12 +183,10 @@ export default function EditListing() {
               <input name="rent" type="number" value={form.rent || ''} onChange={handleChange} className={inputCls} required />
             </div>
           </div>
-
           <div>
             <label className={labelCls}>Description</label>
             <textarea name="description" value={form.description || ''} onChange={handleChange} rows={4} className={inputCls} required />
           </div>
-
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className={labelCls}>Status</label>
@@ -190,52 +205,29 @@ export default function EditListing() {
               </select>
             </div>
           </div>
-
-          <label className="flex items-center gap-2 cursor-pointer">
-            <input type="checkbox" name="negotiable" checked={!!form.negotiable} onChange={handleChange} className="accent-emerald-600 w-4 h-4" />
-            <span className="text-sm text-gray-600">Rent is negotiable</span>
-          </label>
-        </section>
-
-        {/* ── Property Details ────────────────────────────── */}
-        <section className="bg-white rounded-2xl border border-gray-100 p-6 space-y-4 shadow-sm">
-          <h2 className="font-bold text-gray-700 text-lg">🏠 Property Details</h2>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            {[['bedrooms','Bedrooms',[1,2,3,4,5,6]],['bathrooms','Bathrooms',[1,2,3,4]]].map(([name, label, opts]) => (
-              <div key={name}>
-                <label className={labelCls}>{label}</label>
-                <select name={name} value={form[name] || 1} onChange={handleChange} className={inputCls}>
-                  {opts.map((n) => <option key={n} value={n}>{n}</option>)}
-                </select>
-              </div>
-            ))}
+          <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className={labelCls}>Area (sqft)</label>
-              <input name="area" type="number" value={form.area || ''} onChange={handleChange} className={inputCls} placeholder="e.g. 1200" />
+              <label className={labelCls}>Available From</label>
+              <input name="availableFrom" type="date" value={form.availableFrom || ''} onChange={handleChange} className={inputCls} />
             </div>
             <div>
               <label className={labelCls}>Floor</label>
               <input name="floor" value={form.floor || ''} onChange={handleChange} className={inputCls} placeholder="e.g. 3rd" />
             </div>
           </div>
-          <div>
-            <label className={labelCls}>Available From</label>
-            <input name="availableFrom" type="date" value={form.availableFrom || ''} onChange={handleChange} className={inputCls} style={{ maxWidth: '14rem' }} />
-          </div>
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input type="checkbox" name="negotiable" checked={!!form.negotiable} onChange={handleChange} className="accent-emerald-600 w-4 h-4" />
+            <span className="text-sm text-gray-600">Rent is negotiable</span>
+          </label>
         </section>
 
         {/* ── Amenities ───────────────────────────────────── */}
-        <section className="bg-white rounded-2xl border border-gray-100 p-6 shadow-sm">
+        <section className="card">
           <h2 className="font-bold text-gray-700 text-lg mb-4">✨ Amenities</h2>
-          <div className="flex flex-wrap gap-2">
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
             {AMENITIES_OPTIONS.map((a) => (
               <button type="button" key={a} onClick={() => toggleAmenity(a)}
-                className={`px-4 py-2 rounded-full text-sm font-medium transition border ${
-                  amenities.includes(a)
-                    ? 'bg-emerald-600 text-white border-emerald-600'
-                    : 'bg-white text-gray-600 border-gray-200 hover:border-emerald-400'
-                }`}
-              >
+                className={`amenity-btn ${amenities.includes(a) ? 'selected' : ''}`}>
                 {a}
               </button>
             ))}
@@ -243,7 +235,7 @@ export default function EditListing() {
         </section>
 
         {/* ── Location ────────────────────────────────────── */}
-        <section className="bg-white rounded-2xl border border-gray-100 p-6 space-y-4 shadow-sm">
+        <section className="card" style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
           <h2 className="font-bold text-gray-700 text-lg">📍 Location</h2>
           <div className="grid grid-cols-2 gap-4">
             <div>
@@ -262,8 +254,8 @@ export default function EditListing() {
           <div>
             <label className={labelCls}>
               Update Map Pin
-              <span className="text-gray-400 font-normal ml-1">
-                {lat !== null ? `(current: ${lat.toFixed(5)}, ${lng.toFixed(5)})` : '(not set — click map to pin)'}
+              <span style={{ color: '#9ca3af', fontWeight: 400, marginLeft: '0.4rem', fontSize: '0.8rem' }}>
+                {lat !== null ? `Current: ${lat.toFixed(5)}, ${lng.toFixed(5)}` : 'Not set — click map to pin'}
               </span>
             </label>
             <MapPicker onLocationSelect={handleLocationSelect} initialLat={lat} initialLng={lng} />
@@ -271,39 +263,41 @@ export default function EditListing() {
         </section>
 
         {/* ── Photos ──────────────────────────────────────── */}
-        <section className="bg-white rounded-2xl border border-gray-100 p-6 shadow-sm">
+        <section className="card">
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
             <h2 className="font-bold text-gray-700 text-lg">📷 Photos</h2>
-            <span style={{ fontSize: '0.8rem', color: '#9ca3af' }}>{totalPhotos} / 8 photos</span>
+            <span style={{ fontSize: '0.8rem', color: '#9ca3af' }}>{totalPhotos} / {MAX_IMAGES}</span>
           </div>
 
-          {/* ✅ Existing photos with delete button */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '0.6rem', padding: '0.5rem 0.75rem', marginBottom: '0.75rem', fontSize: '0.8rem', color: '#1d4ed8' }}>
+            <FiAlertCircle style={{ flexShrink: 0 }} />
+            Each photo must be under <strong style={{ marginLeft: '0.2rem' }}>5 MB</strong>. JPG, PNG, WEBP only.
+          </div>
+
+          {/* ✅ Existing photos — loaded via imgUrl() so Cloudinary URLs work */}
           {existingImages.length > 0 && (
             <div style={{ marginBottom: '1rem' }}>
-              <p style={{ fontSize: '0.8rem', fontWeight: '600', color: '#4b5563', marginBottom: '0.5rem' }}>Current Photos</p>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '0.6rem' }}>
+              <p style={{ fontSize: '0.8rem', fontWeight: '600', color: '#4b5563', marginBottom: '0.5rem' }}>
+                Current Photos ({existingImages.length})
+              </p>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(7rem, 1fr))', gap: '0.6rem' }}>
                 {existingImages.map((img) => (
                   <div key={img} style={{ position: 'relative', borderRadius: '0.6rem', overflow: 'hidden', border: '1.5px solid #e5e7eb' }}>
+                    {/* ✅ imgUrl() handles both Cloudinary https:// and old /uploads/ paths */}
                     <img
-                      src={`${BASE}${img}`}
+                      src={imgUrl(img)}
                       alt=""
-                      style={{ width: '100%', height: '5.5rem', objectFit: 'cover', display: 'block' }}
-                    />
-                    {/* ✅ Delete button overlay */}
-                    <button
-                      type="button"
-                      onClick={() => handleDeleteImage(img)}
-                      disabled={deletingUrl === img}
-                      style={{
-                        position: 'absolute', top: '0.25rem', right: '0.25rem',
-                        background: deletingUrl === img ? '#9ca3af' : '#dc2626',
-                        border: 'none', color: '#fff', borderRadius: '9999px',
-                        width: '1.6rem', height: '1.6rem', cursor: 'pointer',
-                        display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        fontSize: '0.8rem', transition: 'background 0.2s',
+                      style={{ width: '100%', height: '6rem', objectFit: 'cover', display: 'block' }}
+                      onError={(e) => {
+                        e.target.style.display = 'none';
+                        e.target.parentElement.style.background = '#f3f4f6';
                       }}
-                      title="Remove photo"
-                    >
+                    />
+                    <button type="button"
+                      onClick={() => handleDeleteExisting(img)}
+                      disabled={deletingUrl === img}
+                      style={{ position: 'absolute', top: '0.25rem', right: '0.25rem', background: deletingUrl === img ? '#9ca3af' : '#dc2626', border: 'none', color: '#fff', borderRadius: '9999px', width: '1.5rem', height: '1.5rem', cursor: deletingUrl === img ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.75rem' }}
+                      title="Remove photo">
                       {deletingUrl === img ? '…' : <FiTrash2 />}
                     </button>
                   </div>
@@ -312,41 +306,36 @@ export default function EditListing() {
             </div>
           )}
 
-          {/* ✅ Add new photos */}
-          {totalPhotos < 8 && (
-            <div style={{ marginBottom: '0.75rem' }}>
-              <p style={{ fontSize: '0.8rem', fontWeight: '600', color: '#4b5563', marginBottom: '0.5rem' }}>Add New Photos</p>
-              <label style={{ display: 'block', border: '2px dashed #d1d5db', borderRadius: '0.75rem', padding: '1.5rem', textAlign: 'center', cursor: 'pointer', transition: 'border-color 0.2s' }}
-                onMouseEnter={(e) => (e.currentTarget.style.borderColor = '#059669')}
-                onMouseLeave={(e) => (e.currentTarget.style.borderColor = '#d1d5db')}
-              >
-                <input type="file" accept="image/*" multiple onChange={handleNewImages} className="hidden" />
-                <FiPlus style={{ fontSize: '1.5rem', color: '#9ca3af', margin: '0 auto 0.4rem' }} />
-                <p style={{ fontSize: '0.85rem', color: '#9ca3af' }}>Click to add photos ({8 - existingImages.length} remaining)</p>
+          {/* Add new photos */}
+          {totalPhotos < MAX_IMAGES && (
+            <div>
+              <p style={{ fontSize: '0.8rem', fontWeight: '600', color: '#4b5563', marginBottom: '0.5rem' }}>
+                Add More Photos
+              </p>
+              <label className="upload-zone" style={{ display: 'block', cursor: 'pointer' }}>
+                <input type="file" accept="image/jpeg,image/png,image/webp" multiple
+                  onChange={handleNewImages} style={{ display: 'none' }} />
+                <FiUpload style={{ fontSize: '1.5rem', color: '#9ca3af', display: 'block', margin: '0 auto 0.3rem' }} />
+                <p style={{ color: '#9ca3af', fontSize: '0.85rem' }}>
+                  Click to add photos ({MAX_IMAGES - totalPhotos} slots left)
+                </p>
               </label>
 
-              {/* New image previews */}
-              {newPreviews.length > 0 && (
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '0.6rem', marginTop: '0.6rem' }}>
-                  {newPreviews.map((p, i) => (
-                    <div key={i} style={{ position: 'relative', borderRadius: '0.6rem', overflow: 'hidden', border: '1.5px solid #6ee7b7' }}>
-                      <img src={p} alt="" style={{ width: '100%', height: '5.5rem', objectFit: 'cover', display: 'block' }} />
-                      <button
-                        type="button"
-                        onClick={() => removeNewPreview(i)}
-                        style={{
-                          position: 'absolute', top: '0.25rem', right: '0.25rem',
-                          background: '#dc2626', border: 'none', color: '#fff',
-                          borderRadius: '9999px', width: '1.6rem', height: '1.6rem',
-                          cursor: 'pointer', display: 'flex', alignItems: 'center',
-                          justifyContent: 'center', fontSize: '0.8rem',
-                        }}
-                      >
+              {newImages.length > 0 && (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(7rem, 1fr))', gap: '0.6rem', marginTop: '0.6rem' }}>
+                  {newImages.map((item, i) => (
+                    <div key={i} style={{ position: 'relative', borderRadius: '0.6rem', overflow: 'hidden', border: `2px solid ${item.error ? '#fca5a5' : '#6ee7b7'}` }}>
+                      <img src={item.preview} alt="" style={{ width: '100%', height: '6rem', objectFit: 'cover', display: 'block', filter: item.error ? 'brightness(0.6)' : 'none' }} />
+                      <button type="button" onClick={() => removeNewImage(i)}
+                        style={{ position: 'absolute', top: '0.25rem', right: '0.25rem', background: '#dc2626', border: 'none', color: '#fff', borderRadius: '9999px', width: '1.5rem', height: '1.5rem', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.75rem' }}>
                         <FiTrash2 />
                       </button>
-                      <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, background: '#059669', color: '#fff', fontSize: '0.65rem', padding: '0.15rem 0.3rem', textAlign: 'center' }}>
-                        New
-                      </div>
+                      {!item.error && (
+                        <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, background: '#059669', color: '#fff', fontSize: '0.6rem', padding: '0.15rem', textAlign: 'center', fontWeight: '700' }}>NEW</div>
+                      )}
+                      {item.error && (
+                        <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, background: '#dc2626', color: '#fff', fontSize: '0.6rem', padding: '0.15rem', textAlign: 'center', fontWeight: '700' }}>TOO LARGE</div>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -354,20 +343,16 @@ export default function EditListing() {
             </div>
           )}
 
-          {existingImages.length === 0 && newImageFiles.length === 0 && (
-            <p style={{ fontSize: '0.875rem', color: '#9ca3af', textAlign: 'center', padding: '1rem' }}>
-              No photos yet — add some above!
-            </p>
+          {hasErrors && (
+            <div style={{ marginTop: '0.75rem', background: '#fef2f2', border: '1px solid #fca5a5', borderRadius: '0.6rem', padding: '0.75rem 1rem', fontSize: '0.85rem', color: '#dc2626' }}>
+              ⚠️ Remove photos marked <strong>TOO LARGE</strong> before saving.
+            </div>
           )}
         </section>
 
-        {/* Submit */}
-        <button
-          type="submit"
-          disabled={saving}
-          className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-4 rounded-xl text-lg transition disabled:opacity-70"
-        >
-          {saving ? 'Saving…' : '💾 Save Changes'}
+        <button type="submit" disabled={saving || hasErrors}
+          style={{ width: '100%', background: saving || hasErrors ? '#9ca3af' : '#059669', color: '#fff', border: 'none', borderRadius: '0.75rem', padding: '1rem', fontWeight: '700', fontSize: '1rem', cursor: saving || hasErrors ? 'not-allowed' : 'pointer', fontFamily: 'Inter, sans-serif' }}>
+          {saving ? '⏳ Saving…' : hasErrors ? '⚠️ Fix oversized photos first' : '💾 Save Changes'}
         </button>
       </form>
     </div>

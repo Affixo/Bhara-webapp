@@ -18,17 +18,30 @@ const app = express();
 // ── CORS ──────────────────────────────────────────────────────────────────────
 // Allowed origins: your Vercel URL + localhost for development
 const allowedOrigins = [
-  process.env.CLIENT_URL,              // e.g. https://bhara-webapp.vercel.app
+  'https://bhara-webapp.vercel.app',
   'http://localhost:5173',
   'http://localhost:3000',
-].filter(Boolean);                     // remove undefined if CLIENT_URL not set
+  ...(process.env.CLIENT_URL || '')
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean),
+];
 
-app.use(cors({
+const isAllowedVercelPreview = (origin) => {
+  try {
+    const { hostname } = new URL(origin);
+    return hostname.startsWith('bhara-webapp') && hostname.endsWith('.vercel.app');
+  } catch {
+    return false;
+  }
+};
+
+const corsOptions = {
   origin: (origin, callback) => {
     // Allow requests with no origin (mobile apps, curl, Postman)
     if (!origin) return callback(null, true);
 
-    if (allowedOrigins.includes(origin)) {
+    if (allowedOrigins.includes(origin) || isAllowedVercelPreview(origin)) {
       callback(null, true);
     } else {
       console.log('CORS blocked origin:', origin);
@@ -38,10 +51,12 @@ app.use(cors({
   credentials: true,
   methods:     ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
-}));
+};
+
+app.use(cors(corsOptions));
 
 // ✅ Handle preflight OPTIONS requests for ALL routes
-app.options('*', cors());
+app.options('*', cors(corsOptions));
 
 app.use(express.json());
 

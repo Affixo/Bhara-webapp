@@ -7,13 +7,15 @@ import '../../../core/constants/app_colors.dart';
 import '../../../core/utils/image_helper.dart';
 import '../../../core/utils/session_helper.dart';
 import '../../../models/rent_request_model.dart';
+import '../../../models/user_model.dart';
 import '../../../providers/auth_provider.dart';
 import '../../../providers/listing_provider.dart';
 import '../../../providers/request_provider.dart';
 import '../../widgets/custom_button.dart';
+import 'edit_profile_bottom_sheet.dart';
 
 class ProfileScreen extends StatefulWidget {
-  const ProfileScreen({Key? key}) : super(key: key);
+  const ProfileScreen({super.key});
 
   @override
   State<ProfileScreen> createState() => _ProfileScreenState();
@@ -41,6 +43,15 @@ class _ProfileScreenState extends State<ProfileScreen>
   void dispose() {
     _tabController.dispose();
     super.dispose();
+  }
+
+  void _openEditProfile(BuildContext context, UserModel user) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => EditProfileBottomSheet(user: user),
+    );
   }
 
   @override
@@ -97,6 +108,11 @@ class _ProfileScreenState extends State<ProfileScreen>
         title: const Text('My Profile'),
         actions: [
           IconButton(
+            icon: const Icon(Icons.edit_outlined, color: AppColors.primary),
+            tooltip: 'Edit Profile',
+            onPressed: () => _openEditProfile(context, user),
+          ),
+          IconButton(
             icon: const Icon(Icons.logout, color: AppColors.error),
             tooltip: 'Log Out',
             onPressed: () async {
@@ -114,16 +130,37 @@ class _ProfileScreenState extends State<ProfileScreen>
             child: Column(
               children: [
                 Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    CircleAvatar(
-                      radius: 30,
-                      backgroundColor: AppColors.primarySoft,
-                      backgroundImage: user.avatar.isNotEmpty
-                          ? CachedNetworkImageProvider(ImageHelper.resolveUrl(user.avatar))
-                          : null,
-                      child: user.avatar.isEmpty
-                          ? const Icon(Icons.person, size: 36, color: AppColors.primary)
-                          : null,
+                    GestureDetector(
+                      onTap: () => _openEditProfile(context, user),
+                      child: Stack(
+                        children: [
+                          CircleAvatar(
+                            radius: 32,
+                            backgroundColor: AppColors.primarySoft,
+                            backgroundImage: user.avatar.isNotEmpty
+                                ? CachedNetworkImageProvider(ImageHelper.resolveUrl(user.avatar))
+                                : null,
+                            child: user.avatar.isEmpty
+                                ? const Icon(Icons.person, size: 38, color: AppColors.primary)
+                                : null,
+                          ),
+                          Positioned(
+                            bottom: 0,
+                            right: 0,
+                            child: Container(
+                              padding: const EdgeInsets.all(4),
+                              decoration: BoxDecoration(
+                                color: AppColors.primary,
+                                shape: BoxShape.circle,
+                                border: Border.all(color: Colors.white, width: 1.5),
+                              ),
+                              child: const Icon(Icons.camera_alt, color: Colors.white, size: 12),
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                     const SizedBox(width: 16),
                     Expanded(
@@ -162,15 +199,54 @@ class _ProfileScreenState extends State<ProfileScreen>
                               ],
                             ],
                           ),
-                          const SizedBox(height: 2),
-                          Text(
-                            user.email,
-                            style: const TextStyle(fontSize: 13, color: AppColors.textSecondary),
+                          const SizedBox(height: 3),
+                          Row(
+                            children: [
+                              const Icon(Icons.email_outlined, size: 14, color: AppColors.primary),
+                              const SizedBox(width: 5),
+                              Expanded(
+                                child: Text(
+                                  user.email,
+                                  style: const TextStyle(fontSize: 13, color: AppColors.textSecondary),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
                           ),
                           const SizedBox(height: 2),
-                          Text(
-                            user.phone,
-                            style: const TextStyle(fontSize: 13, color: AppColors.textMuted),
+                          Row(
+                            children: [
+                              const Icon(Icons.phone_outlined, size: 14, color: AppColors.primary),
+                              const SizedBox(width: 5),
+                              Text(
+                                user.phone,
+                                style: const TextStyle(fontSize: 13, color: AppColors.textMuted),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                          // Edit Profile Button (like web app)
+                          InkWell(
+                            onTap: () => _openEditProfile(context, user),
+                            borderRadius: BorderRadius.circular(6),
+                            child: const Padding(
+                              padding: EdgeInsets.symmetric(vertical: 2),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(Icons.edit_outlined, size: 15, color: AppColors.primary),
+                                  SizedBox(width: 4),
+                                  Text(
+                                    'Edit Profile',
+                                    style: TextStyle(
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w600,
+                                      color: AppColors.primary,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
                           ),
                         ],
                       ),
@@ -410,7 +486,7 @@ class _ProfileScreenState extends State<ProfileScreen>
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                   decoration: BoxDecoration(
-                    color: statusColor.withOpacity(0.12),
+                    color: statusColor.withAlpha(30),
                     borderRadius: BorderRadius.circular(6),
                   ),
                   child: Text(

@@ -145,6 +145,10 @@ class AuthProvider extends ChangeNotifier {
         avatarFile: avatarFile,
       );
       _currentUser = updatedUser;
+      if (updatedUser.token != null && updatedUser.token!.isNotEmpty) {
+        _token = updatedUser.token;
+        await _storageService.saveToken(updatedUser.token!);
+      }
       await _storageService.saveUser(updatedUser.toJson());
 
       _isLoading = false;

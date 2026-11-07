@@ -54,33 +54,25 @@ class AuthService {
     String? password,
     File? avatarFile,
   }) async {
-    if (avatarFile != null) {
-      final formData = FormData.fromMap({
-        if (name != null) 'name': name,
-        if (phone != null) 'phone': phone,
-        if (password != null && password.isNotEmpty) 'password': password,
-        'avatar': await MultipartFile.fromFile(
-          avatarFile.path,
-          filename: avatarFile.path.split('/').last,
-        ),
-      });
+    final Map<String, dynamic> map = {};
+    if (name != null) map['name'] = name.trim();
+    if (phone != null) map['phone'] = phone.trim();
+    if (password != null && password.isNotEmpty) map['password'] = password;
 
-      final response = await _dio.put(
-        ApiConstants.updateProfile,
-        data: formData,
-        options: Options(contentType: 'multipart/form-data'),
+    if (avatarFile != null) {
+      final fileName = avatarFile.path.split(RegExp(r'[/\\]')).last;
+      map['avatar'] = await MultipartFile.fromFile(
+        avatarFile.path,
+        filename: fileName,
       );
-      return UserModel.fromJson(response.data);
-    } else {
-      final response = await _dio.put(
-        ApiConstants.updateProfile,
-        data: {
-          if (name != null) 'name': name,
-          if (phone != null) 'phone': phone,
-          if (password != null && password.isNotEmpty) 'password': password,
-        },
-      );
-      return UserModel.fromJson(response.data);
     }
+
+    final formData = FormData.fromMap(map);
+    final response = await _dio.put(
+      ApiConstants.updateProfile,
+      data: formData,
+      options: Options(contentType: 'multipart/form-data'),
+    );
+    return UserModel.fromJson(response.data);
   }
 }

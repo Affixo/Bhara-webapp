@@ -4,3 +4,5 @@ server/uploads/
 client/dist/
 .DS_Store
 Thumbs.db
+*.zip
+.vscode/

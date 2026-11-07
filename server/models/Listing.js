@@ -40,7 +40,7 @@ const listingSchema = new mongoose.Schema(
       enum: ["available", "rented", "pending"],
       default: "available",
     },
-    isApproved: { type: Boolean, default: true }, // admin can toggle
+    isApproved: { type: Boolean, default: false }, // Pending admin approval by default
     views: { type: Number, default: 0 },
   },
   { timestamps: true },

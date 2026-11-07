@@ -87,6 +87,7 @@ const createListing = async (req, res) => {
       lng:   parsedLng,
     },
     availableFrom: availableFrom || undefined,
+    isApproved:    req.user.role === 'admin' ? true : false,
   });
 
   res.status(201).json(listing);
